@@ -4,5 +4,5 @@
   name: repo1
 
 - src: https://github.com/omkar19928860/repo2
-  version: v0.0.6
+  version: v0.0.7
   name: repo2
