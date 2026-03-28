@@ -1,4 +1,4 @@
-name: Sync latest tags to feature branch
+name: Sync latest tags in selected branch
 
 on:
   workflow_dispatch:
@@ -8,22 +8,25 @@ permissions:
 
 jobs:
   sync-tags:
+    if: github.ref_name != 'main'
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout main branch
+      - name: Checkout selected branch
         uses: actions/checkout@v5
         with:
-          ref: main
+          ref: ${{ github.ref_name }}
           fetch-depth: 0
+
+      - name: Show selected branch
+        run: |
+          echo "Workflow triggered from branch: ${{ github.ref_name }}"
+          git branch --show-current
 
       - name: Debug files
         run: |
-          echo "Current directory:"
           pwd
-          echo "Files:"
           ls -la
-          echo "Searching abc.yml:"
           find . -name "abc.yml"
 
       - name: Update versions from latest releases
@@ -34,7 +37,6 @@ jobs:
           import json
           import re
           import os
-          from datetime import datetime
 
           FILE_PATH = "abc.yml"
 
@@ -60,7 +62,6 @@ jobs:
               return data["tag_name"]
 
           changed = False
-          updated_repos = []
 
           i = 0
           while i < len(lines):
@@ -85,7 +86,6 @@ jobs:
                               print(f"Updating {repo}: {old_line.strip()} -> {new_line.strip()}")
                               lines[j] = new_line
                               changed = True
-                              updated_repos.append(repo)
                           break
               i += 1
 
@@ -94,32 +94,36 @@ jobs:
           if changed:
               with open(FILE_PATH, "w", encoding="utf-8") as f:
                   f.write("\n".join(lines) + "\n")
-
-              ts = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
-              branch_name = f"tag-sync-{ts}"
-
               with open(output_file, "a", encoding="utf-8") as out:
                   out.write("changed=true\n")
-                  out.write(f"branch_name={branch_name}\n")
-                  out.write(f"updated_repos={','.join(updated_repos)}\n")
           else:
               with open(output_file, "a", encoding="utf-8") as out:
                   out.write("changed=false\n")
           PY
 
-      - name: Create feature branch and push
+      - name: Commit and push in same selected branch
         if: steps.update_versions.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          NEW_BRANCH="${{ steps.update_versions.outputs.branch_name }}"
+          TARGET_BRANCH="${{ github.ref_name }}"
 
-          git checkout -b "$NEW_BRANCH"
           git add abc.yml
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+
           git commit -m "chore: sync latest release tags"
-          git push origin "$NEW_BRANCH"
+          git push origin "HEAD:${TARGET_BRANCH}"
 
       - name: No changes
         if: steps.update_versions.outputs.changed != 'true'
-        run: echo "No version change found. Main branch untouched."
+        run: echo "No version change found. Selected branch untouched."
+
+  block-main:
+    if: github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Block main branch run
+        run: |
+          echo "This workflow is not allowed on main branch."
+          exit 1
