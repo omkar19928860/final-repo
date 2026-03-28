@@ -14,7 +14,7 @@ jobs:
 
     steps:
       - name: Checkout final repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Update versions from latest releases
         run: |
