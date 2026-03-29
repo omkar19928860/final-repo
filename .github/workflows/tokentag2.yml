@@ -1,133 +1,133 @@
-name: Sync latest tags in selected branch
+name: Sync latest tags in selected branch   # Workflow name shown in GitHub Actions UI
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:   # Manual trigger to run workflow from GitHub UI
 
 permissions:
-  contents: write
+  contents: write   # Allow workflow to commit and push changes to repository
 
 jobs:
-  sync-tags:
-    if: github.ref_name != 'main'
-    runs-on: ubuntu-latest
+  sync-tags:   # Main job for syncing versions
+    if: github.ref_name != 'main'   # Prevent workflow execution on main branch
+    runs-on: ubuntu-latest   # Use GitHub hosted Ubuntu runner
 
     env:
-      MY_GH_TOKEN: ${{ secrets.MY_GH_TOKEN }}   # 🔐 Secret se token read hoga
+      MY_GH_TOKEN: ${{ secrets.MY_GH_TOKEN }}   # Securely load PAT token from GitHub Secrets
 
     steps:
-      - name: Checkout selected branch
-        uses: actions/checkout@v5
+      - name: Checkout selected branch   # Step to fetch repository code
+        uses: actions/checkout@v5   # Official GitHub action for checkout
         with:
-          ref: ${{ github.ref_name }}
-          fetch-depth: 0
+          ref: ${{ github.ref_name }}   # Checkout the branch from which workflow is triggered
+          fetch-depth: 0   # Fetch full git history (needed for commit/push)
 
-      - name: Show selected branch
+      - name: Show selected branch   # Debug step to confirm branch
         run: |
-          echo "Workflow triggered from branch: ${{ github.ref_name }}"
-          git branch --show-current
+          echo "Workflow triggered from branch: ${{ github.ref_name }}"   # Print branch name
+          git branch --show-current   # Display current branch
 
-      - name: Debug files
+      - name: Debug files   # Debug step to locate YAML file
         run: |
-          pwd
-          ls -la
-          find . -name "abc.yml"
+          pwd   # Show current working directory
+          ls -la   # List all files
+          find . -name "abc.yml"   # Search for target YAML file
 
-      - name: Update versions from latest releases
-        id: update_versions
+      - name: Update versions from latest releases   # Main automation logic
+        id: update_versions   # Step ID for later condition checks
         run: |
           python3 <<'PY'
-          import urllib.request
-          import json
-          import re
-          import os
+          import urllib.request   # Used for making HTTP API calls
+          import json   # Parse JSON response from GitHub API
+          import re   # Regex for pattern matching
+          import os   # File and environment variable handling
 
-          FILE_PATH = "abc.yml"
+          FILE_PATH = "abc.yml"   # Target YAML file
 
-          if not os.path.exists(FILE_PATH):
-              raise FileNotFoundError(f"{FILE_PATH} not found in repo root")
+          if not os.path.exists(FILE_PATH):   # Validate file exists
+              raise FileNotFoundError(f"{FILE_PATH} not found in repo root")   # Fail if missing
 
-          with open(FILE_PATH, "r", encoding="utf-8") as f:
+          with open(FILE_PATH, "r", encoding="utf-8") as f:   # Read file content
               content = f.read()
 
-          lines = content.splitlines()
+          lines = content.splitlines()   # Convert content into list of lines
 
-          def get_latest_release(owner, repo):
-              url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
+          def get_latest_release(owner, repo):   # Function to get latest release tag
+              url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"   # GitHub API endpoint
               req = urllib.request.Request(
                   url,
                   headers={
-                      "Accept": "application/vnd.github+json",
-                      "User-Agent": "github-actions",
-                      "Authorization": f"Bearer {os.environ['MY_GH_TOKEN']}"  # 🔐 Token use
+                      "Accept": "application/vnd.github+json",   # API response format
+                      "User-Agent": "github-actions",   # Required header for GitHub API
+                      "Authorization": f"Bearer {os.environ['MY_GH_TOKEN']}"   # Use PAT token for private repo access
                   }
               )
-              with urllib.request.urlopen(req) as resp:
-                  data = json.loads(resp.read().decode())
-              return data["tag_name"]
+              with urllib.request.urlopen(req) as resp:   # Execute API call
+                  data = json.loads(resp.read().decode())   # Parse JSON response
+              return data["tag_name"]   # Return latest release tag
 
-          changed = False
+          changed = False   # Flag to track if any update happens
 
           i = 0
-          while i < len(lines):
-              src_match = re.match(r"^\s*-\s*src:\s*https://github\.com/([^/]+)/([^/\s]+)\s*$", lines[i])
+          while i < len(lines):   # Loop through each line in YAML
+              src_match = re.match(r"^\s*-\s*src:\s*https://github\.com/([^/]+)/([^/\s]+)\s*$", lines[i])   # Match repo URL
               if src_match:
-                  owner = src_match.group(1)
-                  repo = src_match.group(2)
+                  owner = src_match.group(1)   # Extract repository owner (org/user)
+                  repo = src_match.group(2)   # Extract repository name
 
                   try:
-                      latest_tag = get_latest_release(owner, repo)
-                      print(f"{repo} latest release: {latest_tag}")
+                      latest_tag = get_latest_release(owner, repo)   # Fetch latest release tag
+                      print(f"{repo} latest release: {latest_tag}")   # Log for debugging
                   except Exception as e:
-                      print(f"Failed to get latest release for {repo}: {e}")
+                      print(f"Failed to get latest release for {repo}: {e}")   # Handle API failure
                       i += 1
-                      continue
+                      continue   # Skip to next repo
 
-                  for j in range(i + 1, min(i + 6, len(lines))):
-                      if re.match(r"^\s*version:\s*", lines[j]):
+                  for j in range(i + 1, min(i + 6, len(lines))):   # Search nearby lines for version field
+                      if re.match(r"^\s*version:\s*", lines[j]):   # Match version line
                           old_line = lines[j]
-                          new_line = re.sub(r"(^\s*version:\s*).*$", rf"\1{latest_tag}", lines[j])
+                          new_line = re.sub(r"(^\s*version:\s*).*$", rf"\1{latest_tag}", lines[j])   # Replace version value
                           if old_line != new_line:
-                              print(f"Updating {repo}: {old_line.strip()} -> {new_line.strip()}")
-                              lines[j] = new_line
-                              changed = True
+                              print(f"Updating {repo}: {old_line.strip()} -> {new_line.strip()}")   # Log update
+                              lines[j] = new_line   # Update version line
+                              changed = True   # Mark file as changed
                           break
               i += 1
 
-          output_file = os.environ["GITHUB_OUTPUT"]
+          output_file = os.environ["GITHUB_OUTPUT"]   # GitHub output variable file
 
           if changed:
-              with open(FILE_PATH, "w", encoding="utf-8") as f:
+              with open(FILE_PATH, "w", encoding="utf-8") as f:   # Write updated content back to file
                   f.write("\n".join(lines) + "\n")
               with open(output_file, "a", encoding="utf-8") as out:
-                  out.write("changed=true\n")
+                  out.write("changed=true\n")   # Mark workflow output as changed
           else:
               with open(output_file, "a", encoding="utf-8") as out:
-                  out.write("changed=false\n")
+                  out.write("changed=false\n")   # No changes detected
           PY
 
-      - name: Commit and push in same selected branch
-        if: steps.update_versions.outputs.changed == 'true'
+      - name: Commit and push in same selected branch   # Step to commit changes
+        if: steps.update_versions.outputs.changed == 'true'   # Run only if file updated
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"   # Set commit username
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"   # Set commit email
 
-          TARGET_BRANCH="${{ github.ref_name }}"
+          TARGET_BRANCH="${{ github.ref_name }}"   # Store current branch name
 
-          git add abc.yml
-          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git add abc.yml   # Stage updated YAML file
+          git diff --cached --quiet && echo "No changes to commit" && exit 0   # Exit if nothing changed
 
-          git commit -m "chore: sync latest release tags"
-          git push origin "HEAD:${TARGET_BRANCH}"
+          git commit -m "chore: sync latest release tags"   # Commit changes
+          git push origin "HEAD:${TARGET_BRANCH}"   # Push changes to same branch
 
-      - name: No changes
-        if: steps.update_versions.outputs.changed != 'true'
-        run: echo "No version change found. Selected branch untouched."
+      - name: No changes   # Step when no update is required
+        if: steps.update_versions.outputs.changed != 'true'   # Run if no changes detected
+        run: echo "No version change found. Selected branch untouched."   # Print message
 
-  block-main:
-    if: github.ref_name == 'main'
+  block-main:   # Separate job to block execution on main branch
+    if: github.ref_name == 'main'   # Trigger only for main branch
     runs-on: ubuntu-latest
     steps:
-      - name: Block main branch run
+      - name: Block main branch run   # Prevent accidental execution
         run: |
-          echo "This workflow is not allowed on main branch."
-          exit 1
+          echo "This workflow is not allowed on main branch."   # Inform user
+          exit 1   # Fail workflow intentionally
