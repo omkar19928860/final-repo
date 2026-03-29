@@ -1,13 +1,13 @@
 ---
 - src: https://github.com/omkar19928860/repo1
-  version: v0.0.3
+  version: v0.0.4
   name: repo1
 
 - src: https://github.com/omkar19928860/repo2
-  version: v0.0.3
+  version: v0.0.8
   name: repo2
 - src: https://github.com/omkar19928860/repo4
-  version: v0.0.1
+  version: v0.0.3
   name: repo4
 
   
